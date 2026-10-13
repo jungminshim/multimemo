@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="멀티 메모">
+<meta name="theme-color" content="#EDEEF0">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<title>멀티 메모</title>
+<style>
+  :root {
+    --board: #EDEEF0;
+    --radius: 16px;
+    --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "맑은 고딕", sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--board); font-family: var(--font); color: #333; }
+  body {
+    display: flex; flex-direction: column; height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    overflow: hidden;
+  }
+
+  /* 툴바 */
+  #bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 2px; font-size: 13px; }
+  .btn { border: 0; background: #fff; color: #333; font: inherit; padding: 6px 11px; border-radius: 9px; cursor: pointer; }
+  .btn:active { background: #E2E4E8; }
+  .group { display: flex; align-items: center; background: #E2E4E8; border-radius: 9px; padding: 2px; }
+  .group .btn { background: transparent; color: #888; padding: 5px 9px; border-radius: 7px; }
+  .group .btn.on { background: #fff; color: #222; }
+  #size { min-width: 40px; text-align: center; color: #333; }
+  .spacer { flex: 1; }
+  #count { color: #777; font-size: 12px; }
+
+  /* 메모 보드: 개수에 맞춰 JS가 격자 계산 */
+  #board { flex: 1; display: grid; gap: 10px; padding: 8px 10px 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .note {
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+    border-radius: var(--radius); border: 1px solid var(--accent);
+    background: var(--bg); box-shadow: 0 2px 5px rgba(0,0,0,.06);
+    overflow: hidden;
+  }
+  .head { display: flex; align-items: center; margin: 4px 8px 0; border-bottom: 1px solid var(--accent); }
+  .title {
+    flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+    font: 600 16px var(--font); color: #444; padding: 6px 2px;
+  }
+  .icon { border: 0; background: transparent; font-size: 17px; color: #999; padding: 4px 7px; cursor: pointer; line-height: 1; }
+  .icon.dot { color: var(--accent); font-size: 19px; }
+  .body {
+    flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: none;
+    background: transparent; padding: 8px 12px; color: #333; line-height: 1.45;
+    font-family: var(--font);
+  }
+  .status { font-size: 10px; color: #AAA; text-align: right; padding: 0 12px 5px; min-height: 15px; }
+
+  /* 더보기 메뉴 */
+  #menu { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  #menu.open { display: flex; }
+  #sheet { background: #fff; width: 100%; max-width: 480px; border-radius: 18px 18px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  #sheet .btn { display: block; width: 100%; text-align: left; padding: 13px 14px; margin-bottom: 6px; background: #F3F4F6; font-size: 15px; }
+  #sheet .hint { font-size: 12px; color: #888; padding: 4px 6px 10px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <button class="btn" id="add">＋ 새 메모</button>
+    <span id="count"></span>
+    <span class="spacer"></span>
+    <div class="group">
+      <button class="btn" id="minus">－</button>
+      <span id="size"></span>
+      <button class="btn" id="plus">＋</button>
+    </div>
+    <div class="group" id="weights"></div>
+    <button class="btn" id="more">⋯</button>
+  </div>
+  <div id="board"></div>
+
+  <div id="menu">
+    <div id="sheet">
+      <button class="btn" id="export">메모 내보내기 (메모별 .txt 파일)</button>
+      <button class="btn" id="import">.txt 파일 불러오기 (PC 메모도 가능)</button>
+      <button class="btn" id="close">닫기</button>
+      <div class="hint">메모는 이 기기 안에 메모별로 따로 자동 저장됩니다.<br>
+        홈 화면에 추가해서 쓰면 저장이 더 안전하고, 가끔 내보내기로 백업해 두세요.</div>
+    </div>
+  </div>
+  <input type="file" id="file" accept=".txt,text/plain" multiple hidden>
+
+<script>
+// (배경색, 포인트색) - PC 버전과 같은 연한 파스텔
+const COLORS = [
+  ["#FFFCE3", "#F2E6A0"], ["#EEF9E8", "#C9E6B8"], ["#FFF0F5", "#F2C9D8"],
+  ["#F4F0FF", "#D6CCF2"], ["#EDF6FF", "#C3DCF2"], ["#FAFAFA", "#DADADA"],
+];
+const WEIGHTS = { "얇게": 300, "보통": 400, "굵게": 700 };
+const FONT_MIN = 5, FONT_MAX = 20, SAVE_DELAY = 500;
+const META_KEY = "mm:meta", NOTE_KEY = id => "mm:note:" + id;
+
+// 저장소: 메모 본문은 메모마다 별도 키로 저장
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
+let meta;
+try { meta = JSON.parse(store.get(META_KEY, "null")); } catch { meta = null; }
+meta = Object.assign({ order: [], notes: {}, fontSize: 14, fontWeight: "보통" }, meta || {});
+
+const board = document.getElementById("board");
+const views = new Map();   // id -> {el, text, title, status, timer}
+
+function saveMeta() { store.set(META_KEY, JSON.stringify(meta)); }
+function newId() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  let id = `memo_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  let base = id, k = 1;
+  while (meta.notes[id]) id = `${base}_${k++}`;
+  return id;
+}
+
+function applyColor(v, color) {
+  const [bg, accent] = COLORS[color];
+  v.el.style.setProperty("--bg", bg);
+  v.el.style.setProperty("--accent", accent);
+}
+
+function buildNote(id) {
+  const m = meta.notes[id];
+  const el = document.createElement("div");
+  el.className = "note";
+  el.innerHTML = `
+    <div class="head">
+      <input class="title" maxlength="60">
+      <button class="icon" data-act="add" aria-label="새 메모">＋</button>
+      <button class="icon dot" data-act="color" aria-label="색 바꾸기">●</button>
+      <button class="icon" data-act="del" aria-label="삭제">✕</button>
+    </div>
+    <textarea class="body" spellcheck="false"></textarea>
+    <div class="status"></div>`;
+  const v = { el, title: el.querySelector(".title"), text: el.querySelector(".body"),
+              status: el.querySelector(".status"), timer: null };
+  v.title.value = m.title || "";
+  v.text.value = store.get(NOTE_KEY(id), "");
+  applyColor(v, m.color);
+
+  const schedule = () => {
+    clearTimeout(v.timer);
+    v.status.textContent = "입력 중…";
+    v.timer = setTimeout(() => saveNote(id), SAVE_DELAY);
+  };
+  v.text.addEventListener("input", schedule);
+  v.title.addEventListener("input", schedule);
+  el.querySelector('[data-act="add"]').onclick = () => addNote();
+  el.querySelector('[data-act="color"]').onclick = () => {
+    m.color = (m.color + 1) % COLORS.length;
+    applyColor(v, m.color);
+    saveMeta();
+  };
+  el.querySelector('[data-act="del"]').onclick = () => deleteNote(id);
+  views.set(id, v);
+  return el;
+}
+
+function saveNote(id) {
+  const v = views.get(id);
+  if (!v) return;
+  clearTimeout(v.timer); v.timer = null;
+  meta.notes[id].title = v.title.value;
+  const ok = store.set(NOTE_KEY(id), v.text.value);
+  saveMeta();
+  const t = new Date().toTimeString().slice(0, 8);
+  v.status.textContent = ok ? `저장됨 ${t}` : "⚠ 저장 실패 (저장 공간 부족)";
+}
+function flushAll() { for (const [id, v] of views) if (v.timer) saveNote(id); }
+
+function addNote(title, text = "") {
+  const id = newId();
+  meta.notes[id] = { title: title ?? `메모 ${meta.order.length + 1}`, color: meta.order.length % COLORS.length };
+  meta.order.push(id);
+  store.set(NOTE_KEY(id), text);
+  saveMeta();
+  board.appendChild(buildNote(id));
+  layout();
+  if (title === undefined) views.get(id).text.focus();
+  return id;
+}
+
+function deleteNote(id) {
+  const v = views.get(id);
+  const name = v.title.value || "이 메모";
+  if (v.text.value.trim() && !confirm(`'${name}'를 삭제할까요?`)) return;
+  // 바로 지우지 않고 휴지통 키로 옮겨둠
+  store.set("mm:trash:" + id + "_" + Date.now(), JSON.stringify({ title: v.title.value, text: v.text.value }));
+  store.del(NOTE_KEY(id));
+  clearTimeout(v.timer);
+  v.el.remove();
+  views.delete(id);
+  delete meta.notes[id];
+  meta.order = meta.order.filter(x => x !== id);
+  saveMeta();
+  if (!meta.order.length) addNote(); else layout();
+}
+
+// 메모 개수와 화면 비율에 맞춰 격자 계산 (PC 버전과 같은 방식)
+function layout() {
+  const n = meta.order.length;
+  const w = board.clientWidth || innerWidth, h = board.clientHeight || innerHeight;
+  const cols = Math.min(n, Math.max(1, Math.round(Math.sqrt(n * (w / h) / 1.2))));
+  const rows = Math.ceil(n / cols);
+  board.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  board.style.gridTemplateRows = `repeat(${rows}, minmax(150px, 1fr))`;
+  meta.order.forEach((id, i) => {
+    const el = views.get(id).el, c = i % cols;
+    // 마지막 줄이 비면 마지막 메모가 가로로 늘어나도록
+    el.style.gridColumn = (i === n - 1 && c < cols - 1) ? `span ${cols - c}` : "";
+  });
+  document.getElementById("count").textContent = `메모 ${n}개`;
+}
+
+// 글자 크기 / 굵기
+const weightsEl = document.getElementById("weights");
+for (const name of Object.keys(WEIGHTS)) {
+  const b = document.createElement("button");
+  b.className = "btn"; b.textContent = name; b.style.fontWeight = WEIGHTS[name];
+  b.onclick = () => { meta.fontWeight = name; applyFont(); saveMeta(); };
+  weightsEl.appendChild(b);
+}
+function applyFont() {
+  meta.fontSize = Math.max(FONT_MIN, Math.min(FONT_MAX, meta.fontSize));
+  if (!(meta.fontWeight in WEIGHTS)) meta.fontWeight = "보통";
+  document.getElementById("size").textContent = meta.fontSize + "pt";
+  for (const b of weightsEl.children) b.classList.toggle("on", b.textContent === meta.fontWeight);
+  const s = document.getElementById("dyn") || document.head.appendChild(Object.assign(document.createElement("style"), { id: "dyn" }));
+  s.textContent = `.body { font-size: ${meta.fontSize}pt; font-weight: ${WEIGHTS[meta.fontWeight]}; }`;
+}
+document.getElementById("minus").onclick = () => { meta.fontSize--; applyFont(); saveMeta(); };
+document.getElementById("plus").onclick = () => { meta.fontSize++; applyFont(); saveMeta(); };
+document.getElementById("add").onclick = () => addNote();
+
+// 내보내기 / 불러오기
+const menu = document.getElementById("menu");
+document.getElementById("more").onclick = () => menu.classList.add("open");
+document.getElementById("close").onclick = () => menu.classList.remove("open");
+menu.onclick = e => { if (e.target === menu) menu.classList.remove("open"); };
+
+document.getElementById("export").onclick = async () => {
+  flushAll();
+  const used = new Set();
+  const files = meta.order.map(id => {
+    let name = (meta.notes[id].title || id).replace(/[\\/:*?"<>|]/g, "_").trim() || id;
+    while (used.has(name)) name += "_";
+    used.add(name);
+    return new File([store.get(NOTE_KEY(id), "")], name + ".txt", { type: "text/plain" });
+  });
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try { await navigator.share({ files }); } catch {}
+  } else {
+    for (const f of files) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(f); a.download = f.name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }
+  }
+  menu.classList.remove("open");
+};
+const fileInput = document.getElementById("file");
+document.getElementById("import").onclick = () => fileInput.click();
+fileInput.onchange = async () => {
+  for (const f of fileInput.files) addNote(f.name.replace(/\.txt$/i, ""), await f.text());
+  fileInput.value = "";
+  menu.classList.remove("open");
+};
+
+// 시작
+meta.order = meta.order.filter(id => meta.notes[id]);
+for (const id of meta.order) board.appendChild(buildNote(id));
+applyFont();
+if (!meta.order.length) addNote(); else layout();
+addEventListener("resize", layout);
+addEventListener("pagehide", flushAll);
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushAll(); });
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
