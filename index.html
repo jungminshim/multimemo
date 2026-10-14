@@ -14,6 +14,8 @@
 <style>
   :root {
     --board: #EDEEF0;
+    --tab: #E2E4E8;
+    --green: #1A7F37;
     --radius: 16px;
     --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "맑은 고딕", sans-serif;
   }
@@ -21,7 +23,7 @@
   html, body { margin: 0; height: 100%; background: var(--board); font-family: var(--font); color: #333; }
   body {
     display: flex; flex-direction: column; height: 100dvh;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
     overflow: hidden;
   }
 
@@ -29,7 +31,7 @@
   #bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 2px; font-size: 13px; }
   .btn { border: 0; background: #fff; color: #333; font: inherit; padding: 6px 11px; border-radius: 9px; cursor: pointer; }
   .btn:active { background: #E2E4E8; }
-  .group { display: flex; align-items: center; background: #E2E4E8; border-radius: 9px; padding: 2px; }
+  .group { display: flex; align-items: center; background: var(--tab); border-radius: 9px; padding: 2px; }
   .group .btn { background: transparent; color: #888; padding: 5px 9px; border-radius: 7px; }
   .group .btn.on { background: #fff; color: #222; }
   #size { min-width: 40px; text-align: center; color: #333; }
@@ -58,12 +60,36 @@
   }
   .status { font-size: 10px; color: #AAA; text-align: right; padding: 0 12px 5px; min-height: 15px; }
 
-  /* 더보기 메뉴 */
-  #menu { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
-  #menu.open { display: flex; }
-  #sheet { background: #fff; width: 100%; max-width: 480px; border-radius: 18px 18px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
-  #sheet .btn { display: block; width: 100%; text-align: left; padding: 13px 14px; margin-bottom: 6px; background: #F3F4F6; font-size: 15px; }
-  #sheet .hint { font-size: 12px; color: #888; padding: 4px 6px 10px; line-height: 1.5; }
+  /* 엑셀 시트 같은 아래쪽 탭 */
+  #tabbar {
+    display: flex; align-items: stretch; background: var(--tab); border-top: 1px solid #CCCED3;
+    padding: 0 6px env(safe-area-inset-bottom); overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; flex-shrink: 0;
+  }
+  #tabbar::-webkit-scrollbar { display: none; }
+  .tab {
+    border: 0; background: transparent; color: #555; font: 13px var(--font); white-space: nowrap;
+    padding: 9px 15px 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-right: 1px;
+  }
+  .tab.on { background: #fff; color: var(--green); font-weight: 700; border-bottom-color: var(--green); }
+  .tab.add { color: #666; font-size: 17px; padding: 6px 14px; }
+
+  /* 아래에서 올라오는 메뉴 */
+  .menu { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  .menu.open { display: flex; }
+  .sheet { background: #fff; width: 100%; max-width: 480px; border-radius: 18px 18px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); }
+  .sheet h3 { margin: 2px 6px 12px; font-size: 15px; color: #555; }
+  .sheet .btn { display: block; width: 100%; text-align: left; padding: 13px 14px; margin-bottom: 6px; background: #F3F4F6; font-size: 15px; }
+  .sheet .btn.danger { color: #C62828; }
+  .sheet .row { display: flex; gap: 6px; }
+  .sheet .row .btn { text-align: center; }
+  .sheet .hint { font-size: 12px; color: #888; padding: 4px 6px 10px; line-height: 1.5; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(60px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: rgba(40,40,40,.88); color: #fff; font-size: 13px; padding: 8px 14px; border-radius: 10px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -80,17 +106,39 @@
     <button class="btn" id="more">⋯</button>
   </div>
   <div id="board"></div>
+  <div id="tabbar"></div>
 
-  <div id="menu">
-    <div id="sheet">
+  <!-- 전체 메뉴 -->
+  <div class="menu" id="menu">
+    <div class="sheet">
+      <button class="btn" id="exportTab">현재 탭 저장 (.zip)</button>
+      <button class="btn" id="importTab">탭 불러오기 (.zip)</button>
       <button class="btn" id="export">메모 내보내기 (메모별 .txt 파일)</button>
-      <button class="btn" id="import">.txt 파일 불러오기 (PC 메모도 가능)</button>
-      <button class="btn" id="close">닫기</button>
+      <button class="btn" id="import">.txt 파일을 메모로 불러오기</button>
+      <button class="btn" data-close>닫기</button>
       <div class="hint">메모는 이 기기 안에 메모별로 따로 자동 저장됩니다.<br>
-        홈 화면에 추가해서 쓰면 저장이 더 안전하고, 가끔 내보내기로 백업해 두세요.</div>
+        탭 .zip 파일은 PC·맥 버전과 서로 주고받을 수 있어요.</div>
     </div>
   </div>
+
+  <!-- 탭 메뉴 (선택된 탭을 한 번 더 누르면 열림) -->
+  <div class="menu" id="tabMenu">
+    <div class="sheet">
+      <h3 id="tabMenuTitle"></h3>
+      <button class="btn" id="tabRename">이름 바꾸기</button>
+      <div class="row">
+        <button class="btn" id="tabLeft">◀ 왼쪽으로</button>
+        <button class="btn" id="tabRight">오른쪽으로 ▶</button>
+      </div>
+      <button class="btn" id="tabSave">이 탭 저장 (.zip)</button>
+      <button class="btn danger" id="tabDelete">탭 삭제</button>
+      <button class="btn" data-close>닫기</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
   <input type="file" id="file" accept=".txt,text/plain" multiple hidden>
+  <input type="file" id="zipFile" accept=".zip,application/zip" hidden>
 
 <script>
 // (배경색, 포인트색) - PC 버전과 같은 연한 파스텔
@@ -100,7 +148,8 @@ const COLORS = [
 ];
 const WEIGHTS = { "얇게": 300, "보통": 400, "굵게": 700 };
 const FONT_MIN = 5, FONT_MAX = 20, SAVE_DELAY = 500;
-const META_KEY = "mm:meta", NOTE_KEY = id => "mm:note:" + id;
+const META_KEY = "mm:meta", TAB_META = "_meta.json";
+const noteKey = (tid, id) => `mm:n:${tid}:${id}`;
 
 // 저장소: 메모 본문은 메모마다 별도 키로 저장
 const store = {
@@ -109,30 +158,66 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 
+// ---------- 데이터 불러오기 (+ 탭 없던 예전 버전 데이터 옮기기) ----------
 let meta;
-try { meta = JSON.parse(store.get(META_KEY, "null")); } catch { meta = null; }
-meta = Object.assign({ order: [], notes: {}, fontSize: 14, fontWeight: "보통" }, meta || {});
+try { meta = JSON.parse(store.get(META_KEY, "null")) || {}; } catch { meta = {}; }
+if (!Array.isArray(meta.tabs)) {
+  const tab = { id: "t1", name: "시트1", order: meta.order || [], notes: meta.notes || {} };
+  for (const id of tab.order) {
+    const old = store.get("mm:note:" + id, null);
+    if (old !== null) { store.set(noteKey(tab.id, id), old); store.del("mm:note:" + id); }
+  }
+  meta = { tabs: [tab], active: 0, fontSize: meta.fontSize ?? 14, fontWeight: meta.fontWeight ?? "보통" };
+  store.set(META_KEY, JSON.stringify(meta));
+}
+meta.tabs.forEach(t => { t.order = (t.order || []).filter(id => t.notes && t.notes[id]); t.notes ||= {}; });
+if (!meta.tabs.length) meta.tabs.push({ id: "t1", name: "시트1", order: [], notes: {} });
+if (!(meta.active >= 0 && meta.active < meta.tabs.length)) meta.active = 0;
 
 const board = document.getElementById("board");
-const views = new Map();   // id -> {el, text, title, status, timer}
+const tabbar = document.getElementById("tabbar");
+let views = new Map();   // 현재 탭의 id -> {el, text, title, status, timer}
+const cur = () => meta.tabs[meta.active];
 
 function saveMeta() { store.set(META_KEY, JSON.stringify(meta)); }
-function newId() {
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+function stamp() {
   const d = new Date(), p = n => String(n).padStart(2, "0");
-  let id = `memo_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  let base = id, k = 1;
-  while (meta.notes[id]) id = `${base}_${k++}`;
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+function newNoteId(tab) {
+  let id = "memo_" + stamp(), base = id, k = 1;
+  while (tab.notes[id]) id = `${base}_${k++}`;
   return id;
 }
+function newTabId() {
+  let k = meta.tabs.length + 1;
+  while (meta.tabs.some(t => t.id === "t" + k)) k++;
+  return "t" + k;
+}
+function cleanName(s) { return (s || "").replace(/[\\/:*?"<>|]/g, "_").trim().replace(/^[_.]+/, "").slice(0, 40); }
+function uniqueTabName(base) {
+  base = cleanName(base) || "시트";
+  const taken = new Set(meta.tabs.map(t => t.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  let k = 2;
+  while (taken.has((base + k).toLowerCase())) k++;
+  return base + k;
+}
 
+// ---------- 메모 ----------
 function applyColor(v, color) {
   const [bg, accent] = COLORS[color];
   v.el.style.setProperty("--bg", bg);
   v.el.style.setProperty("--accent", accent);
 }
 
-function buildNote(id) {
-  const m = meta.notes[id];
+function buildNote(tab, id) {
+  const m = tab.notes[id];
   const el = document.createElement("div");
   el.className = "note";
   el.innerHTML = `
@@ -147,7 +232,7 @@ function buildNote(id) {
   const v = { el, title: el.querySelector(".title"), text: el.querySelector(".body"),
               status: el.querySelector(".status"), timer: null };
   v.title.value = m.title || "";
-  v.text.value = store.get(NOTE_KEY(id), "");
+  v.text.value = store.get(noteKey(tab.id, id), "");
   applyColor(v, m.color);
 
   const schedule = () => {
@@ -169,62 +254,248 @@ function buildNote(id) {
 }
 
 function saveNote(id) {
-  const v = views.get(id);
+  const v = views.get(id), tab = cur();
   if (!v) return;
   clearTimeout(v.timer); v.timer = null;
-  meta.notes[id].title = v.title.value;
-  const ok = store.set(NOTE_KEY(id), v.text.value);
+  tab.notes[id].title = v.title.value;
+  const ok = store.set(noteKey(tab.id, id), v.text.value);
   saveMeta();
   const t = new Date().toTimeString().slice(0, 8);
   v.status.textContent = ok ? `저장됨 ${t}` : "⚠ 저장 실패 (저장 공간 부족)";
 }
 function flushAll() { for (const [id, v] of views) if (v.timer) saveNote(id); }
 
-function addNote(title, text = "") {
-  const id = newId();
-  meta.notes[id] = { title: title ?? `메모 ${meta.order.length + 1}`, color: meta.order.length % COLORS.length };
-  meta.order.push(id);
-  store.set(NOTE_KEY(id), text);
+function addNote(title, text = "", tab = cur()) {
+  const id = newNoteId(tab);
+  tab.notes[id] = { title: title ?? `메모 ${tab.order.length + 1}`, color: tab.order.length % COLORS.length };
+  tab.order.push(id);
+  store.set(noteKey(tab.id, id), text);
   saveMeta();
-  board.appendChild(buildNote(id));
-  layout();
-  if (title === undefined) views.get(id).text.focus();
+  if (tab === cur()) {
+    board.appendChild(buildNote(tab, id));
+    layout();
+    if (title === undefined) views.get(id).text.focus();
+  }
   return id;
 }
 
 function deleteNote(id) {
-  const v = views.get(id);
+  const v = views.get(id), tab = cur();
   const name = v.title.value || "이 메모";
   if (v.text.value.trim() && !confirm(`'${name}'를 삭제할까요?`)) return;
   // 바로 지우지 않고 휴지통 키로 옮겨둠
-  store.set("mm:trash:" + id + "_" + Date.now(), JSON.stringify({ title: v.title.value, text: v.text.value }));
-  store.del(NOTE_KEY(id));
+  store.set(`mm:trash:${tab.name}_${id}_${Date.now()}`, JSON.stringify({ title: v.title.value, text: v.text.value }));
+  store.del(noteKey(tab.id, id));
   clearTimeout(v.timer);
   v.el.remove();
   views.delete(id);
-  delete meta.notes[id];
-  meta.order = meta.order.filter(x => x !== id);
+  delete tab.notes[id];
+  tab.order = tab.order.filter(x => x !== id);
   saveMeta();
-  if (!meta.order.length) addNote(); else layout();
+  if (!tab.order.length) addNote(); else layout();
 }
 
 // 메모 개수와 화면 비율에 맞춰 격자 계산 (PC 버전과 같은 방식)
 function layout() {
-  const n = meta.order.length;
+  const tab = cur(), n = tab.order.length;
+  document.getElementById("count").textContent = `메모 ${n}개`;
+  if (!n) return;
   const w = board.clientWidth || innerWidth, h = board.clientHeight || innerHeight;
   const cols = Math.min(n, Math.max(1, Math.round(Math.sqrt(n * (w / h) / 1.2))));
   const rows = Math.ceil(n / cols);
   board.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
   board.style.gridTemplateRows = `repeat(${rows}, minmax(150px, 1fr))`;
-  meta.order.forEach((id, i) => {
+  tab.order.forEach((id, i) => {
     const el = views.get(id).el, c = i % cols;
     // 마지막 줄이 비면 마지막 메모가 가로로 늘어나도록
     el.style.gridColumn = (i === n - 1 && c < cols - 1) ? `span ${cols - c}` : "";
   });
-  document.getElementById("count").textContent = `메모 ${n}개`;
 }
 
-// 글자 크기 / 굵기
+// ---------- 탭 ----------
+function renderBoard() {
+  board.innerHTML = "";
+  views = new Map();
+  const tab = cur();
+  for (const id of tab.order) board.appendChild(buildNote(tab, id));
+  if (!tab.order.length) addNote("메모 1", "", tab); else layout();
+  board.scrollTop = 0;
+}
+
+function renderTabs() {
+  tabbar.innerHTML = "";
+  meta.tabs.forEach((t, i) => {
+    const b = document.createElement("button");
+    b.className = "tab" + (i === meta.active ? " on" : "");
+    b.textContent = t.name;
+    b.onclick = () => i === meta.active ? openTabMenu() : switchTab(i);
+    tabbar.appendChild(b);
+  });
+  const add = document.createElement("button");
+  add.className = "tab add"; add.textContent = "＋"; add.setAttribute("aria-label", "새 탭");
+  add.onclick = () => addTab();
+  tabbar.appendChild(add);
+  tabbar.children[meta.active]?.scrollIntoView({ inline: "nearest", block: "nearest" });
+}
+
+function switchTab(i) {
+  flushAll();
+  meta.active = i;
+  saveMeta();
+  renderTabs();
+  renderBoard();
+}
+
+function addTab(name, tab) {
+  tab = tab || { order: [], notes: {} };
+  tab.id ||= newTabId();
+  tab.name = uniqueTabName(name || `시트${meta.tabs.length + 1}`);
+  meta.tabs.push(tab);
+  switchTab(meta.tabs.length - 1);
+  return tab;
+}
+
+const tabMenu = document.getElementById("tabMenu");
+function openTabMenu() {
+  document.getElementById("tabMenuTitle").textContent = `'${cur().name}' 탭`;
+  tabMenu.classList.add("open");
+}
+document.getElementById("tabRename").onclick = () => {
+  const tab = cur();
+  const name = prompt("탭 이름", tab.name);
+  tabMenu.classList.remove("open");
+  if (name === null) return;
+  const clean = cleanName(name);
+  if (!clean || clean === tab.name) return;
+  if (meta.tabs.some(t => t !== tab && t.name.toLowerCase() === clean.toLowerCase())) { alert(`'${clean}' 탭이 이미 있어요.`); return; }
+  tab.name = clean; saveMeta(); renderTabs();
+};
+function moveTab(d) {
+  const i = meta.active, j = i + d;
+  if (j < 0 || j >= meta.tabs.length) return;
+  [meta.tabs[i], meta.tabs[j]] = [meta.tabs[j], meta.tabs[i]];
+  meta.active = j; saveMeta(); renderTabs();
+}
+document.getElementById("tabLeft").onclick = () => moveTab(-1);
+document.getElementById("tabRight").onclick = () => moveTab(1);
+document.getElementById("tabSave").onclick = () => { tabMenu.classList.remove("open"); exportTab(); };
+document.getElementById("tabDelete").onclick = () => {
+  const tab = cur();
+  tabMenu.classList.remove("open");
+  if (meta.tabs.length === 1) { alert("탭이 하나뿐이라 삭제할 수 없어요."); return; }
+  if (!confirm(`'${tab.name}' 탭과 메모 ${tab.order.length}개를 삭제할까요?`)) return;
+  flushAll();
+  const trash = { name: tab.name, notes: tab.order.map(id => ({ ...tab.notes[id], text: store.get(noteKey(tab.id, id), "") })) };
+  store.set(`mm:trash:tab_${tab.name}_${Date.now()}`, JSON.stringify(trash));
+  for (const id of tab.order) store.del(noteKey(tab.id, id));
+  meta.tabs.splice(meta.active, 1);
+  switchTab(Math.max(0, meta.active - 1));
+};
+
+// ---------- 탭 저장 / 불러오기 (.zip, PC·맥 버전과 같은 형식) ----------
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files) {   // 압축 없이(stored) 묶음. files: [{name, data: Uint8Array}]
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x800, true);
+    lh.setUint16(12, 0x21, true); lh.setUint32(14, crc, true); lh.setUint32(18, size, true);
+    lh.setUint32(22, size, true); lh.setUint16(26, name.length, true);
+    parts.push(lh.buffer, name, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x800, true); ch.setUint16(14, 0x21, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, size, true); ch.setUint32(24, size, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(ch.buffer, name);
+    offset += 30 + name.length + size;
+  }
+  const cdSize = central.reduce((s, p) => s + p.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: "application/zip" });
+}
+async function readZip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder();
+  let e = buf.byteLength - 22;
+  while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error("zip 파일이 아니에요");
+  const n = dv.getUint16(e + 10, true), out = [];
+  let p = dv.getUint32(e + 16, true);
+  for (let i = 0; i < n; i++) {
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+    const off = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+    p += 46 + nl + xl + cl;
+    const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true);
+    let data = u8.slice(start, start + csize);
+    if (method === 8) {
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      data = new Uint8Array(await new Response(stream).arrayBuffer());
+    } else if (method !== 0) continue;
+    out.push({ name, data });
+  }
+  return out;
+}
+async function shareOrDownload(files) {
+  if (navigator.canShare && navigator.canShare({ files })) {
+    try { await navigator.share({ files }); } catch {}
+    return;
+  }
+  for (const f of files) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(f); a.download = f.name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+}
+
+async function exportTab() {
+  flushAll();
+  const tab = cur(), enc = new TextEncoder();
+  const files = tab.order.map(id => ({ name: id + ".txt", data: enc.encode(store.get(noteKey(tab.id, id), "")) }));
+  files.push({ name: TAB_META, data: enc.encode(JSON.stringify({ order: tab.order, notes: tab.notes }, null, 2)) });
+  await shareOrDownload([new File([makeZip(files)], tab.name + ".zip", { type: "application/zip" })]);
+}
+
+async function importTab(file) {
+  let entries;
+  try { entries = await readZip(await file.arrayBuffer()); }
+  catch (err) { alert("파일을 열 수 없어요.\n" + err.message); return; }
+  const dec = new TextDecoder(), texts = {};
+  let m = {};
+  for (const { name, data } of entries) {
+    const base = name.split("/").pop();   // 하위 폴더 경로는 무시
+    if (base === TAB_META) { try { m = JSON.parse(dec.decode(data)); } catch {} }
+    else if (base.toLowerCase().endsWith(".txt")) texts[base.slice(0, -4)] = dec.decode(data);
+  }
+  const order = (m.order || []).filter(id => id in texts);
+  for (const id of Object.keys(texts).sort()) if (!order.includes(id)) order.push(id);
+  const notes = {};
+  order.forEach((id, i) => {
+    const n = (m.notes || {})[id] || {};
+    notes[id] = { title: n.title ?? id, color: ((n.color ?? i) % COLORS.length + COLORS.length) % COLORS.length };
+  });
+  const tab = { order, notes };
+  tab.id = newTabId();
+  for (const id of order) store.set(noteKey(tab.id, id), texts[id]);
+  addTab(file.name.replace(/\.zip$/i, ""), tab);
+  toast(`'${tab.name}' 탭으로 메모 ${order.length}개를 불러왔어요`);
+}
+
+// ---------- 글자 크기 / 굵기 ----------
 const weightsEl = document.getElementById("weights");
 for (const name of Object.keys(WEIGHTS)) {
   const b = document.createElement("button");
@@ -244,31 +515,31 @@ document.getElementById("minus").onclick = () => { meta.fontSize--; applyFont();
 document.getElementById("plus").onclick = () => { meta.fontSize++; applyFont(); saveMeta(); };
 document.getElementById("add").onclick = () => addNote();
 
-// 내보내기 / 불러오기
+// ---------- 메뉴 ----------
 const menu = document.getElementById("menu");
 document.getElementById("more").onclick = () => menu.classList.add("open");
-document.getElementById("close").onclick = () => menu.classList.remove("open");
-menu.onclick = e => { if (e.target === menu) menu.classList.remove("open"); };
-
+for (const mm of [menu, tabMenu]) {
+  mm.onclick = e => { if (e.target === mm || e.target.hasAttribute("data-close")) mm.classList.remove("open"); };
+}
+document.getElementById("exportTab").onclick = () => { menu.classList.remove("open"); exportTab(); };
+const zipInput = document.getElementById("zipFile");
+document.getElementById("importTab").onclick = () => zipInput.click();
+zipInput.onchange = async () => {
+  menu.classList.remove("open");
+  for (const f of zipInput.files) await importTab(f);
+  zipInput.value = "";
+};
 document.getElementById("export").onclick = async () => {
   flushAll();
-  const used = new Set();
-  const files = meta.order.map(id => {
-    let name = (meta.notes[id].title || id).replace(/[\\/:*?"<>|]/g, "_").trim() || id;
+  const tab = cur(), used = new Set();
+  const files = tab.order.map(id => {
+    let name = cleanName(tab.notes[id].title) || id;
     while (used.has(name)) name += "_";
     used.add(name);
-    return new File([store.get(NOTE_KEY(id), "")], name + ".txt", { type: "text/plain" });
+    return new File([store.get(noteKey(tab.id, id), "")], name + ".txt", { type: "text/plain" });
   });
-  if (navigator.canShare && navigator.canShare({ files })) {
-    try { await navigator.share({ files }); } catch {}
-  } else {
-    for (const f of files) {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(f); a.download = f.name; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    }
-  }
   menu.classList.remove("open");
+  await shareOrDownload(files);
 };
 const fileInput = document.getElementById("file");
 document.getElementById("import").onclick = () => fileInput.click();
@@ -278,11 +549,10 @@ fileInput.onchange = async () => {
   menu.classList.remove("open");
 };
 
-// 시작
-meta.order = meta.order.filter(id => meta.notes[id]);
-for (const id of meta.order) board.appendChild(buildNote(id));
+// ---------- 시작 ----------
 applyFont();
-if (!meta.order.length) addNote(); else layout();
+renderTabs();
+renderBoard();
 addEventListener("resize", layout);
 addEventListener("pagehide", flushAll);
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushAll(); });
